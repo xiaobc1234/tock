@@ -1,0 +1,45 @@
+name: Build desktop packages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-15
+            output: dist/Tock-*-mac-arm64.zip
+          - target: darwin-x64
+            runner: macos-15-intel
+            output: dist/Tock-*-mac-x64.zip
+          - target: win32-x64
+            runner: windows-2025
+            output: dist/Tock-*-win-x64.exe
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - if: runner.os == 'macOS'
+        run: npm run package -- --target=${{ matrix.target }} --config.mac.identity=-
+      - if: runner.os == 'Windows'
+        run: npm run package -- --target=${{ matrix.target }} --config.win.signExecutable=false
+      - uses: actions/upload-artifact@v6
+        with:
+          name: Tock-${{ matrix.target }}
+          path: ${{ matrix.output }}
+          if-no-files-found: error
+          compression-level: 0

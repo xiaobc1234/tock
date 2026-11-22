@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tock</title>
+  <link rel="stylesheet" href="widget.css">
+  <script src="widget.js" defer></script>
+</head>
+<body>
+  <main id="panel" class="panel">
+    <header>
+      <div class="identity" id="drag-handle" title="拖拽到屏幕边缘">
+        <img class="brand-icon" src="icon.png" alt="">
+        <h1>Tock</h1>
+      </div>
+      <div class="header-actions">
+        <button id="refresh" class="icon-button" aria-label="刷新重置时间" title="刷新重置时间">
+          <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3.2 8.4a9.5 9.5 0 0 1 17.5 1.8m0 0v-4m0 4-3.7-1.7M20.8 15.6a9.5 9.5 0 0 1-17.5-1.8m0 0v4m0-4 3.7 1.7"/>
+          </svg>
+        </button>
+        <button id="collapse" class="icon-button" aria-label="贴边收起" title="贴边收起"><span class="minimize-icon" aria-hidden="true"></span></button>
+        <button id="quit" class="icon-button quit" aria-label="退出应用" title="退出应用"><span class="power-icon" aria-hidden="true"></span></button>
+      </div>
+    </header>
+
+    <section aria-labelledby="reset-label">
+      <h2 id="reset-label">重置时间</h2>
+      <dl id="windows">
+        <div class="time-card">
+          <dt>5 小时重置</dt>
+          <dd><time id="reset-short"><strong>—</strong><span>待读取</span></time></dd>
+        </div>
+        <div class="time-card">
+          <dt>每周重置</dt>
+          <dd><time id="reset-week"><strong>—</strong><span>待读取</span></time></dd>
+        </div>
+      </dl>
+      <div class="account"><span id="account-dot" aria-hidden="true"></span><span id="account">正在连接 Codex…</span></div>
+    </section>
+
+    <div class="schedule">
+      <label class="switch-row">
+        <span>自动发送问候</span>
+        <input id="automatic" type="checkbox" role="switch" aria-describedby="auto-timing">
+      </label>
+      <div class="next-row" id="auto-timing"><span>下次发送</span><time id="next">—</time></div>
+    </div>
+
+    <div class="actions">
+      <button id="send" class="primary" disabled>手动发送</button>
+      <button id="login" class="primary" hidden>登录 ChatGPT</button>
+      <span id="model" class="model">正在识别可用模型…</span>
+      <p id="status" role="status"></p>
+      <button id="show-history" class="history-link" type="button" aria-haspopup="dialog">发送记录</button>
+    </div>
+  </main>
+  <dialog id="history" aria-labelledby="history-title">
+    <div class="history-header">
+      <h2 id="history-title">发送记录</h2>
+      <form method="dialog"><button class="history-link" type="submit">关闭</button></form>
+    </div>
+    <p id="history-empty">还没有发送记录</p>
+    <ol id="history-items"></ol>
+  </dialog>
+  <button id="tab" class="tab" aria-label="展开 Tock" title="单击展开，拖拽换边" data-edge="right" hidden>
+    <span class="capsule" aria-hidden="true"></span>
+  </button>
+</body>
+</html>

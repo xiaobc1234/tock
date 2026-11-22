@@ -1,0 +1,45 @@
+{
+  "name": "codex-quota-widget",
+  "version": "0.2.3",
+  "private": true,
+  "description": "Tock, a desktop widget for Codex quota reset times",
+  "author": "Codex Quota Widget contributors",
+  "main": "src/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "package": "node scripts/package.cjs"
+  },
+  "devDependencies": {
+    "@openai/codex": "0.164.0",
+    "electron": "45.4.1",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "local.codex.quota-widget",
+    "productName": "Tock",
+    "artifactName": "Tock-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "src/**",
+      "package.json",
+      "LICENSE"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor",
+        "to": "codex"
+      }
+    ],
+    "mac": {
+      "target": "zip",
+      "category": "public.app-category.utilities",
+      "icon": "assets/icon.icns"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "icon": "assets/icon.png"
+  },
+  "license": "MIT"
+}
