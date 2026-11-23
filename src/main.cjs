@@ -1,16 +1,16 @@
 const { host, events, handle, displays, nearestDisplay, setupTray } = require('./host.cjs')
-const { Codex } = require('./codex.cjs')
+const { Codex, CodexError } = require('./codex.cjs')
+const { languages, normalizeLanguage, translate } = require('./i18n.js')
 const { quotaSnapshot, observe, unstartedWindows, nextCheck, nextWake, recordAttempt } = require('./schedule.cjs')
 const { restoreHistory, addGreeting, confirmGreeting } = require('./history.cjs')
 const { edges, dockBounds, nearestDock } = require('./dock.cjs')
 const maxTimerDelay = 2_147_483_647
-const edgeLabels = { left: '左边', right: '右边', top: '顶部', bottom: '底部' }
 
 function readSettings(path) {
   try {
     return host.exists(path) ? JSON.parse(host.readFile(path)) ?? {} : {}
   } catch (error) {
-    console.error('无法读取 Tock 设置')
+    console.error('Could not read Tock settings')
     return {}
   }
 }
@@ -27,6 +27,7 @@ function start() {
   const legacyPath = host.join(host.path('appData'), 'Codex 周期', 'settings.json')
   const saved = readSettings(host.exists(settingsPath) ? settingsPath : legacyPath)
   let settings = {
+    language: normalizeLanguage(saved.language),
     edge: edges.includes(saved.edge) ? saved.edge : 'right',
     collapsed: saved.collapsed === true,
     anchor: Number.isFinite(saved.anchor) ? Math.min(Math.max(saved.anchor, 0), 1) : 0.42,
@@ -44,7 +45,7 @@ function start() {
   let connectedAccount = null
   let accountConnected = false
   let selectedModel = null
-  let viewStatus = '正在查询重置时间…'
+  let viewStatus = 'readingTimes'
   let viewNote = ''
   let needsLogin = false
   let loginPending = false
@@ -56,6 +57,7 @@ function start() {
   let drag
   let dockDisplay = displays().find(({ id }) => id === settings.displayId)
     ?? nearestDisplay(JSON.parse(host.cursor()))
+  const t = (key, status) => translate(settings.language, key, status)
 
   function updateSettings(changes) {
     const next = { ...settings, ...changes }
@@ -72,6 +74,7 @@ function start() {
 
   function publish() {
     host.snapshot(JSON.stringify({
+      language: settings.language,
       windows: quota?.windows.map(({ minutes, resetAt }) => ({ minutes, resetAt })) ?? [],
       hasQuota: Boolean(quota),
       weeklyOnly: quota?.windows.length === 1 && quota.windows[0].minutes === 10080,
@@ -86,8 +89,8 @@ function start() {
       collapsed: settings.collapsed,
       edge: settings.edge,
       busy, needsLogin, loginPending,
-      status: viewStatus,
-      note: viewNote,
+      status: viewStatus instanceof CodexError ? t(viewStatus.key, viewStatus.status) : t(viewStatus),
+      note: t(viewNote),
     }))
   }
 
@@ -109,22 +112,38 @@ function start() {
     host.show()
   }
 
+  function setLanguage(language) {
+    if (!languages.includes(language) || settings.language === language) return
+    updateSettings({ language })
+    refreshTray()
+    publish()
+  }
+
   function refreshTray() {
     const items = [
-      { label: settings.collapsed ? '展开浮窗' : '收起浮窗', click: () => setCollapsed(!settings.collapsed) },
+      { label: t(settings.collapsed ? 'expand' : 'collapse'), click: () => setCollapsed(!settings.collapsed) },
       {
-        label: '吸附位置',
+        label: t('dockEdge'),
         submenu: edges.map((edge) => ({
-          label: edgeLabels[edge], type: 'radio', checked: settings.edge === edge,
+          label: t(edge), type: 'radio', checked: settings.edge === edge,
           click: () => setDock({ edge }),
         })),
       },
-      { label: '刷新并检查是否开启新周期', click: () => refresh('refresh') },
+      {
+        label: t('language'),
+        submenu: languages.map((language) => ({
+          label: language === 'en-US' ? 'English' : '简体中文', type: 'radio',
+          checked: settings.language === language, click: () => setLanguage(language),
+        })),
+      },
+      { label: t('refreshTray'), click: () => refresh('refresh') },
+      {
+        label: t('autostart'), type: 'checkbox', checked: host.autostartEnabled(),
+        click: ({ checked }) => host.setAutostart(checked),
+      },
+      { type: 'separator' },
+      { label: t('quit'), click: () => host.quit() },
     ]
-    items.push({
-      label: '登录系统时启动', type: 'checkbox', checked: host.autostartEnabled(),
-      click: ({ checked }) => host.setAutostart(checked),
-    }, { type: 'separator' }, { label: '退出 Tock', click: () => host.quit() })
     setupTray(items)
   }
 
@@ -203,9 +222,9 @@ function start() {
         legacySchedule: isLegacyAccount ? undefined : legacy,
       })
     }
-    viewStatus = needsLogin ? '登录 Codex 后即可显示重置时间'
+    viewStatus = needsLogin ? 'signInForTimes'
       : quota?.windows.some(({ resetAt }) => resetAt) ? ''
-        : 'Codex 暂未提供重置时间'
+        : 'noResetTimes'
   }
 
   async function loadQuota(connection, options) {
@@ -225,7 +244,7 @@ function start() {
   async function refresh(mode) {
     if (busy || quitting || loginPending) return
     if (!codex) {
-      viewStatus = '未找到 Codex CLI。请安装后重新打开 Tock。'
+      viewStatus = 'cliMissing'
       publish()
       return
     }
@@ -247,19 +266,19 @@ function start() {
           selectedModel = await codex.greetingModel()
         } catch {
           selectedModel = null
-          viewNote = '暂时无法读取可用模型'
+          viewNote = 'modelLookupFailed'
           return
         }
       }
       if (!selectedModel) {
-        viewNote = '当前账号没有可用的 Luna 模型'
+        viewNote = 'lunaUnavailable'
         return
       }
-      if (['暂时无法读取可用模型', '当前账号没有可用的 Luna 模型'].includes(viewNote)) viewNote = ''
+      if (['modelLookupFailed', 'lunaUnavailable'].includes(viewNote)) viewNote = ''
       if (mode === 'read' || mode === 'settle') return
       if (manual && (expected !== quota.accountId || expectedModel?.id !== selectedModel.id
           || expectedModel?.effort !== selectedModel.effort)) {
-        viewNote = '账号或模型已更新，请确认后再发送'
+        viewNote = 'sendSelectionChanged'
         return
       }
       const now = Date.now()
@@ -268,7 +287,7 @@ function start() {
       if (requestedRefresh && starting.length === 0) return
       if (!manual && !requestedRefresh && (!settings.autoEnabled || !pending?.windows.length || pending.at > now)) return
       if (!quota.canSend) {
-        viewNote = '暂未确认有可用的订阅额度，已暂停发送'
+        viewNote = 'noIncludedQuota'
         return
       }
 
@@ -287,12 +306,12 @@ function start() {
         },
         history: addGreeting(settings.history, checkedAt, manual ? 'manual' : requestedRefresh ? 'refresh' : 'automatic'),
       })
-      viewNote = '正在发送问候…'
+      viewNote = 'sending'
       publish()
       const completed = await codex.greet(thread).catch(() => false)
       if (quitting) return
       if (completed) updateSettings({ history: confirmGreeting(settings.history, checkedAt) })
-      const resultNote = completed ? '已发送问候' : '发送结果未确认'
+      const resultNote = completed ? 'greetingSent' : 'sendUnconfirmed'
       viewNote = resultNote
       try {
         await loadQuota(codex, { fresh: true })
@@ -306,7 +325,7 @@ function start() {
         }
       }
     } catch (error) {
-      viewStatus = error.message
+      viewStatus = error instanceof CodexError ? error : 'codexRequestFailed'
     } finally {
       busy = false
       scheduleNext(mode === 'read')
@@ -319,7 +338,7 @@ function start() {
     codex.loginId = null
     loginPending = false
     if (!event.success) {
-      viewStatus = '登录未完成，请重试'
+      viewStatus = 'signInIncomplete'
       scheduleNext()
       publish()
       return
@@ -330,7 +349,7 @@ function start() {
   codex?.on('disconnected', () => {
     if (!loginPending) return
     loginPending = false
-    viewStatus = '登录连接已中断，请重试'
+    viewStatus = 'signInDisconnected'
     scheduleNext()
     publish()
   })
@@ -341,6 +360,7 @@ function start() {
     publish()
   })
   handle('collapse', () => setCollapsed(!settings.collapsed))
+  handle('language', setLanguage)
   handle('quit', () => host.quit())
   handle('refresh', () => refresh('refresh'))
   handle('send', () => refresh('manual'))
@@ -367,7 +387,7 @@ function start() {
     try { await codex.login(host.openLoginURL) }
     catch (error) {
       loginPending = false
-      viewStatus = error.message
+      viewStatus = error instanceof CodexError ? error : 'loginOpenFailed'
       scheduleNext()
       publish()
     }

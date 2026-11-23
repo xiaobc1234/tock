@@ -8,13 +8,20 @@ const preferredModels = new Map([
   ['gpt-5.6-luna', 'GPT-5.6 Luna'],
 ])
 
-class RpcError extends Error {
-  constructor(message, details = {}) {
-    super(message)
+class CodexError extends Error {
+  constructor(key, status) {
+    super(key)
+    this.key = key
+    this.status = status
+  }
+}
+
+class RpcError extends CodexError {
+  constructor(key, details = {}) {
     const text = String(details.message ?? '')
     const status = text.match(/(?:status(?:\s+code)?\s*[:=]?\s*|HTTP(?:\/\d(?:\.\d)?)?\s+|\()([45]\d{2})\b/i)
       ?? text.match(/\b(401|403|407|408|429|500|502|503|504)\s+(?:Unauthorized|Forbidden|Proxy Authentication|Request Timeout|Too Many Requests|Internal Server Error|Bad Gateway|Service Unavailable|Gateway Timeout)\b/i)
-    this.status = status ? Number(status[1]) : undefined
+    super(key, status ? Number(status[1]) : undefined)
     if (this.status === 401 || /token_revoked|token_invalidated|invalidated oauth|invalid_grant|chatgpt authentication required|codex account authentication required/i.test(text)) {
       this.kind = 'auth'
     } else if (/cloudflare|just a moment|challenge-platform/i.test(text)) {
@@ -37,16 +44,15 @@ class RpcError extends Error {
   }
 }
 
-const quotaMessages = {
-  auth: 'Codex 登录已失效，请在 Codex 中重新登录后刷新。',
-  challenge: '额度查询遇到服务端访问验证，请稍后刷新。',
-  access: '额度查询被拒绝，请检查当前网络或工作区权限。',
-  unsupported: '当前 Codex 额度服务不可用，请稍后刷新。',
-  certificate: '额度查询未能验证网络证书，请检查网络设置。',
-  timeout: '额度查询超时，请检查网络后刷新。',
-  service: 'Codex 额度服务暂时无法响应，请稍后刷新。',
-  network: '连接 Codex 额度服务失败，请检查网络后刷新。',
-  unknown: 'Codex 已登录，但额度服务未返回数据，请稍后刷新。',
+const quotaErrorKeys = {
+  auth: 'quotaAuth',
+  challenge: 'quotaChallenge',
+  access: 'quotaAccess',
+  unsupported: 'quotaUnsupported',
+  certificate: 'quotaCertificate',
+  timeout: 'quotaTimeout',
+  service: 'quotaService',
+  network: 'quotaNetwork',
 }
 
 class Codex extends Emitter {
@@ -68,7 +74,7 @@ class Codex extends Emitter {
       this.loginId = null
       host.kill(child)
       for (const request of this.requests.values()) {
-        request.reject(new Error('Codex 连接中断'))
+        request.reject(new CodexError('codexDisconnected'))
       }
       this.emit('disconnected')
     }
@@ -95,7 +101,7 @@ class Codex extends Emitter {
     this.child = child
     this.connection = this.call('initialize', {
       clientInfo: { name: 'tock', version: host.version },
-    }, '无法启动 Codex').then(() => this.write({ method: 'initialized' })).catch((error) => {
+    }, 'cliStartFailed').then(() => this.write({ method: 'initialized' })).catch((error) => {
       disconnect()
       throw error
     })
@@ -103,14 +109,14 @@ class Codex extends Emitter {
   }
 
   write(value) {
-    if (!this.child) throw new Error('Codex 未连接')
+    if (!this.child) throw new CodexError('codexUnavailable')
     host.write(this.child, JSON.stringify(value) + '\n')
   }
 
-  call(method, params, failure = 'Codex 请求失败') {
+  call(method, params, failure = 'codexRequestFailed') {
     const id = ++this.sequence
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => finish(reject, new RpcError('Codex 连接超时', { kind: 'timeout' })), requestTimeout)
+      const timer = setTimeout(() => finish(reject, new RpcError('codexTimedOut', { kind: 'timeout' })), requestTimeout)
       const finish = (notify, value) => {
         clearTimeout(timer)
         this.requests.delete(id)
@@ -128,13 +134,13 @@ class Codex extends Emitter {
   async readQuota({ fresh = false } = {}) {
     if (fresh) this.stop()
     await this.connect()
-    const { account } = await this.call('account/read', { refreshToken: false }, '暂时无法确认 Codex 登录状态')
+    const { account } = await this.call('account/read', { refreshToken: false }, 'accountCheckFailed')
       .catch((error) => {
-        if (error.kind === 'auth') throw new Error(quotaMessages.auth)
+        if (error.kind === 'auth') throw new CodexError('quotaAuth', error.status)
         throw error
       })
     if (account?.type !== 'chatgpt') return null
-    const read = () => this.call('account/rateLimits/read', undefined, '额度查询失败')
+    const read = () => this.call('account/rateLimits/read', undefined, 'quotaReadFailed')
     let limits
     try {
       try {
@@ -145,8 +151,8 @@ class Codex extends Emitter {
         limits = await read()
       }
     } catch (error) {
-      const status = error.status ? `（HTTP ${error.status}）` : ''
-      const failure = new Error((quotaMessages[error.kind] ?? quotaMessages.unknown) + status)
+      const key = Object.hasOwn(quotaErrorKeys, error.kind) ? quotaErrorKeys[error.kind] : 'quotaUnknown'
+      const failure = new CodexError(key, error.status)
       failure.connectedAccount = error.kind === 'auth' ? null : account.email
       failure.accountConnected = error.kind !== 'auth'
       throw failure
@@ -158,13 +164,13 @@ class Codex extends Emitter {
     await this.connect()
     const result = await this.call('account/login/start', {
       type: 'chatgpt', useHostedLoginSuccessPage: true, appBrand: 'codex',
-    }, '无法打开 ChatGPT 登录')
+    }, 'loginOpenFailed')
     this.loginId = result.loginId
     try {
       await openBrowser(result.authUrl)
-    } catch (error) {
+    } catch {
       await this.cancelLogin().catch(() => {})
-      throw error
+      throw new CodexError('loginOpenFailed')
     }
   }
 
@@ -203,7 +209,7 @@ class Codex extends Emitter {
       baseInstructions: 'Reply with exactly 你好. Do not use tools.',
       developerInstructions: '',
       config: { web_search: 'disabled', mcp_servers: {}, plugins: {} },
-    }, '无法准备问候会话')
+    }, 'greetingSetupFailed')
     return { id: thread.id, effort: model.effort }
   }
 
@@ -223,7 +229,7 @@ class Codex extends Emitter {
         input: [{ type: 'text', text: '请只回复：你好' }],
         effort: thread.effort,
         serviceTierForTurn: 'default',
-      }, '问候请求未确认')
+      }, 'greetingUnconfirmed')
       if (turn.status === 'completed') return true
       if (turn.status !== 'inProgress') return false
       return await completed
@@ -239,4 +245,4 @@ class Codex extends Emitter {
   }
 }
 
-module.exports = { Codex, RpcError }
+module.exports = { Codex, CodexError, RpcError }

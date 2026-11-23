@@ -10,11 +10,11 @@ Tock 是一个轻量的桌面浮窗，用来查看 Codex 的 5 小时和每周�
 
 前往 [GitHub Releases](https://github.com/xiaobc1234/tock/releases/latest)，按电脑的系统和处理器下载对应的 ZIP。
 
-| 平台                        | v0.3.2 下载文件            | 使用方式                       |
+| 平台                        | v0.3.3 下载文件            | 使用方式                       |
 | --------------------------- | -------------------------- | ------------------------------ |
-| Mac · Apple 芯片（M 系列）  | `Tock-0.3.2-mac-arm64.zip` | 解压后将 Tock 拖入「应用程序」 |
-| Mac · Intel 芯片            | `Tock-0.3.2-mac-x64.zip`   | 解压后将 Tock 拖入「应用程序」 |
-| Windows · Intel / AMD 64 位 | `Tock-0.3.2-win-x64.zip`   | 解压后运行 `Tock.exe`          |
+| Mac · Apple 芯片（M 系列）  | `Tock-0.3.3-mac-arm64.zip` | 解压后将 Tock 拖入「应用程序」 |
+| Mac · Intel 芯片            | `Tock-0.3.3-mac-x64.zip`   | 解压后将 Tock 拖入「应用程序」 |
+| Windows · Intel / AMD 64 位 | `Tock-0.3.3-win-x64.zip`   | 解压后运行 `Tock.exe`          |
 
 - **Mac** 需要 macOS 13 Ventura 或更新版本。在「 → 关于本机」查看芯片或处理器。
 - **Windows** 需要 Windows 10 或 11 和 WebView2 Runtime。[微软官方下载](https://developer.microsoft.com/en-us/microsoft-edge/webview2/#download)
@@ -28,6 +28,7 @@ Tock 使用系统 WebView，三个 ZIP 均小于 8 MB，解压后均小于 19 MB
 - **到点发送问候。** 可选在重置后 1 分钟复查，确认需要开启新周期时发送一条问候。等待期间无需定时轮询额度。
 - **查看发送记录。** 面板显示所用模型、推理等级和下次自动发送时间。记录保留最近 50 次尝试，包括发送方式和结果。
 - **贴边浮窗。** 面板和收起后的胶囊都可拖拽吸附到屏幕四边。胶囊动画遵循系统的减少动态效果设置。
+- **中英文切换。** 默认简体中文，可从面板右上角或系统托盘的语言菜单切换为 English，选择会自动保存。
 
 ## 使用指南
 

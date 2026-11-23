@@ -20,8 +20,8 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 cp native/*.go native/{go.mod,go.sum} "$work/"
 mkdir -p "$work/frontend" "$work/controller"
-cp src/{bridge.js,index.html,widget.js,widget.css,icon.png,trayTemplate.png} "$work/frontend/"
-cp src/{main,codex,dock,history,schedule}.cjs native/host.cjs "$work/controller/"
+cp src/{bridge.js,i18n.js,index.html,widget.js,widget.css,icon.png,trayTemplate.png} "$work/frontend/"
+cp src/i18n.js src/{main,codex,dock,history,schedule}.cjs native/host.cjs "$work/controller/"
 if [[ $target = darwin-* || ( $target = test && $(uname -s) = Darwin ) ]]; then
   export MACOSX_DEPLOYMENT_TARGET=13.0
   export CGO_CFLAGS="${CGO_CFLAGS:--O2 -g} -mmacosx-version-min=13.0"

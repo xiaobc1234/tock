@@ -5,6 +5,7 @@ if (!window.widget) {
     subscribe: (callback) => { window.tockSnapshot = callback },
     ready: () => invoke('ready'),
     collapse: () => invoke('collapse'),
+    language: (value) => invoke('language', value),
     quit: () => invoke('quit'),
     refresh: () => invoke('refresh'),
     automatic: (value) => invoke('automatic', value),

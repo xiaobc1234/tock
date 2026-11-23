@@ -12,16 +12,30 @@ const model = document.querySelector('#model')
 const historyDialog = document.querySelector('#history')
 const historyItems = document.querySelector('#history-items')
 const historyEmpty = document.querySelector('#history-empty')
-const dateFormat = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' })
-const historyDate = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'numeric', day: 'numeric' })
-const clockFormat = new Intl.DateTimeFormat('zh-CN', {
-  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
-})
-const efforts = {
-  none: '无推理', minimal: '极低推理', low: '低推理', medium: '中等推理',
-  high: '高推理', xhigh: '超高推理', max: '最高推理', ultra: '超高推理',
-}
+const languageSelect = document.querySelector('#language')
+const { defaultLanguage, normalizeLanguage, translate } = globalThis.tockI18n
+let language
+let dateFormat
+let historyDate
+let clockFormat
 let latest
+const t = (key) => translate(language, key)
+
+function applyLanguage(value) {
+  const nextLanguage = normalizeLanguage(value)
+  if (nextLanguage === language) return
+  language = nextLanguage
+  document.documentElement.lang = language
+  languageSelect.value = language
+  dateFormat = new Intl.DateTimeFormat(language, { month: 'numeric', day: 'numeric' })
+  historyDate = new Intl.DateTimeFormat(language, { year: 'numeric', month: 'numeric', day: 'numeric' })
+  clockFormat = new Intl.DateTimeFormat(language, {
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  })
+  for (const node of document.querySelectorAll('[data-i18n]')) node.textContent = t(node.dataset.i18n)
+  for (const node of document.querySelectorAll('[data-i18n-title]')) node.title = t(node.dataset.i18nTitle)
+  for (const node of document.querySelectorAll('[data-i18n-label]')) node.setAttribute('aria-label', t(node.dataset.i18nLabel))
+}
 
 function displayTime(element, value, fallback) {
   const date = value ? new Date(value) : null
@@ -39,6 +53,7 @@ function displayTime(element, value, fallback) {
 
 function render(snapshot) {
   latest = snapshot
+  applyLanguage(snapshot.language)
   if (snapshot.collapsed && historyDialog.open) historyDialog.close()
   panel.hidden = snapshot.collapsed
   tab.hidden = !snapshot.collapsed
@@ -50,30 +65,30 @@ function render(snapshot) {
   send.disabled = !snapshot.canSend
   send.hidden = snapshot.needsLogin
   login.hidden = !snapshot.needsLogin
-  login.textContent = snapshot.loginPending ? '取消登录' : '登录 ChatGPT'
+  login.textContent = t(snapshot.loginPending ? 'cancelSignIn' : 'signIn')
   document.querySelector('#windows').classList.toggle('weekly-only', Boolean(snapshot.weeklyOnly))
   document.querySelector('#reset-short').closest('.time-card').hidden = Boolean(snapshot.weeklyOnly)
-  account.textContent = snapshot.account || (snapshot.accountConnected ? 'Codex 已登录' : 'Codex 账号未确认')
+  account.textContent = snapshot.account || t(snapshot.accountConnected ? 'signedIn' : 'accountUnknown')
   account.title = snapshot.account ?? ''
   accountDot.dataset.connected = String(snapshot.accountConnected)
   model.hidden = snapshot.needsLogin
+  const effort = snapshot.model?.effort ?? 'default'
   model.textContent = snapshot.model
-    ? snapshot.model.name + ' · ' + (efforts[snapshot.model.effort] ?? snapshot.model.effort ?? '默认推理')
-    : snapshot.busy ? '正在识别可用模型…' : '暂无可用问候模型'
-  status.textContent = snapshot.loginPending ? '请在浏览器完成 Codex 登录'
+    ? snapshot.model.name + ' · ' + (t('effort.' + effort) || effort)
+    : t(snapshot.busy ? 'findingModel' : 'noGreetingModel')
+  status.textContent = snapshot.loginPending ? t('finishSignIn')
     : snapshot.status || snapshot.note
-  displayTime(next, snapshot.nextSend, snapshot.automatic ? '待确认' : '已关闭')
+  displayTime(next, snapshot.nextSend, t(snapshot.automatic ? 'pending' : 'disabled'))
 
   for (const [minutes, selector] of [[300, '#reset-short'], [10080, '#reset-week']]) {
     const item = snapshot.windows.find((entry) => entry.minutes === minutes)
-    const fallback = snapshot.hasQuota && snapshot.windows.length > 0 && !item ? '未报告该窗口' : '待确认'
+    const fallback = t(snapshot.hasQuota && snapshot.windows.length > 0 && !item ? 'windowUnreported' : 'pending')
     displayTime(document.querySelector(selector), item?.resetAt, fallback)
   }
   if (historyDialog.open) renderHistory(snapshot.history)
 }
 
 function renderHistory(records = []) {
-  const types = { manual: '手动发送', automatic: '自动发送', refresh: '刷新时发送', legacy: '旧版记录' }
   historyEmpty.hidden = records.length > 0
   historyItems.replaceChildren(...records.map(({ at, mode, result }) => {
     const row = document.createElement('li')
@@ -81,7 +96,8 @@ function renderHistory(records = []) {
     time.dateTime = new Date(at).toISOString()
     time.textContent = historyDate.format(at) + ' ' + clockFormat.format(at)
     const outcome = document.createElement('span')
-    outcome.textContent = (types[mode] ?? types.legacy) + ' · ' + (result === 'sent' ? '已发送' : '结果未确认')
+    const modeKey = ['manual', 'automatic', 'refresh'].includes(mode) ? mode : 'legacy'
+    outcome.textContent = t(modeKey) + ' · ' + t(result === 'sent' ? 'sent' : 'unconfirmed')
     row.append(time, outcome)
     return row
   }))
@@ -105,12 +121,14 @@ function draggable(element, fromStrip) {
 
 draggable(document.querySelector('#drag-handle'), false)
 draggable(tab, true)
+applyLanguage(defaultLanguage)
 window.widget.subscribe(render)
 window.widget.ready()
 tab.addEventListener('click', (event) => { if (event.detail === 0) window.widget.collapse() })
 document.querySelector('#collapse').addEventListener('click', () => window.widget.collapse())
 document.querySelector('#quit').addEventListener('click', () => window.widget.quit())
 refresh.addEventListener('click', () => window.widget.refresh())
+languageSelect.addEventListener('change', () => window.widget.language(languageSelect.value))
 automatic.addEventListener('change', () => window.widget.automatic(automatic.checked))
 send.addEventListener('click', () => window.widget.send())
 login.addEventListener('click', () => latest?.loginPending ? window.widget.cancelLogin() : window.widget.login())

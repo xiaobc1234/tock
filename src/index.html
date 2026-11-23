@@ -7,66 +7,71 @@
   <title>Tock</title>
   <link rel="stylesheet" href="widget.css">
   <script src="bridge.js" defer></script>
+  <script src="i18n.js" defer></script>
   <script src="widget.js" defer></script>
 </head>
 <body>
   <main id="panel" class="panel">
     <header>
-      <div class="identity" id="drag-handle" title="拖拽到屏幕边缘">
+      <div class="identity" id="drag-handle" data-i18n-title="dragWindow">
         <img class="brand-icon" src="icon.png" alt="">
         <h1>Tock</h1>
       </div>
       <div class="header-actions">
-        <button id="refresh" class="icon-button" aria-label="刷新重置时间" title="刷新重置时间。检测到未开启的周期时发一条问候">
+        <select id="language" class="language-select" data-i18n-label="language" data-i18n-title="language">
+          <option value="zh-CN" lang="zh-CN">简体中文</option>
+          <option value="en-US" lang="en-US">English</option>
+        </select>
+        <button id="refresh" class="icon-button" data-i18n-label="refreshTimes" data-i18n-title="refreshHint">
           <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M3.2 8.4a9.5 9.5 0 0 1 17.5 1.8m0 0v-4m0 4-3.7-1.7M20.8 15.6a9.5 9.5 0 0 1-17.5-1.8m0 0v4m0-4 3.7 1.7"/>
           </svg>
         </button>
-        <button id="collapse" class="icon-button" aria-label="贴边收起" title="贴边收起"><span class="minimize-icon" aria-hidden="true"></span></button>
-        <button id="quit" class="icon-button quit" aria-label="退出应用" title="退出应用"><span class="power-icon" aria-hidden="true"></span></button>
+        <button id="collapse" class="icon-button" data-i18n-label="collapse" data-i18n-title="collapse"><span class="minimize-icon" aria-hidden="true"></span></button>
+        <button id="quit" class="icon-button quit" data-i18n-label="quit" data-i18n-title="quit"><span class="power-icon" aria-hidden="true"></span></button>
       </div>
     </header>
 
     <section aria-labelledby="reset-label">
-      <h2 id="reset-label">重置时间</h2>
+      <h2 id="reset-label" data-i18n="resetTimes"></h2>
       <dl id="windows">
         <div class="time-card">
-          <dt>5 小时重置</dt>
-          <dd><time id="reset-short"><strong>—</strong><span>待读取</span></time></dd>
+          <dt data-i18n="shortReset"></dt>
+          <dd><time id="reset-short"><strong>—</strong><span data-i18n="loading"></span></time></dd>
         </div>
         <div class="time-card">
-          <dt>每周重置</dt>
-          <dd><time id="reset-week"><strong>—</strong><span>待读取</span></time></dd>
+          <dt data-i18n="weeklyReset"></dt>
+          <dd><time id="reset-week"><strong>—</strong><span data-i18n="loading"></span></time></dd>
         </div>
       </dl>
-      <div class="account"><span id="account-dot" aria-hidden="true"></span><span id="account">正在连接 Codex…</span></div>
+      <div class="account"><span id="account-dot" aria-hidden="true"></span><span id="account" data-i18n="connecting"></span></div>
     </section>
 
     <div class="schedule">
       <label class="switch-row">
-        <span>自动发送问候</span>
+        <span data-i18n="autoSend"></span>
         <input id="automatic" type="checkbox" role="switch" aria-describedby="auto-timing">
       </label>
-      <div class="next-row" id="auto-timing"><span>下次自动发送</span><time id="next">—</time></div>
+      <div class="next-row" id="auto-timing"><span data-i18n="nextSend"></span><time id="next">—</time></div>
     </div>
 
     <div class="actions">
-      <button id="send" class="primary" disabled>手动发送</button>
-      <button id="login" class="primary" hidden>登录 ChatGPT</button>
-      <span id="model" class="model">正在识别可用模型…</span>
+      <button id="send" class="primary" data-i18n="send" disabled></button>
+      <button id="login" class="primary" data-i18n="signIn" hidden></button>
+      <span id="model" class="model" data-i18n="findingModel"></span>
       <p id="status" role="status"></p>
-      <button id="show-history" class="history-link" type="button" aria-haspopup="dialog">发送记录</button>
+      <button id="show-history" class="history-link" type="button" aria-haspopup="dialog" data-i18n="history"></button>
     </div>
   </main>
   <dialog id="history" aria-labelledby="history-title">
     <div class="history-header">
-      <h2 id="history-title">发送记录</h2>
-      <form method="dialog"><button class="history-link" type="submit">关闭</button></form>
+      <h2 id="history-title" data-i18n="history"></h2>
+      <form method="dialog"><button class="history-link" type="submit" data-i18n="close"></button></form>
     </div>
-    <p id="history-empty">还没有发送记录</p>
+    <p id="history-empty" data-i18n="emptyHistory"></p>
     <ol id="history-items"></ol>
   </dialog>
-  <button id="tab" class="tab" aria-label="展开 Tock" title="单击展开，拖拽换边" data-edge="right" hidden>
+  <button id="tab" class="tab" data-i18n-label="expand" data-i18n-title="expandHint" data-edge="right" hidden>
     <span class="capsule" aria-hidden="true"></span>
   </button>
 </body>
