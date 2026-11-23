@@ -2,6 +2,8 @@
 
 Tock 是一个轻量的桌面浮窗，用来查看 Codex 的 5 小时和每周额度重置时间。展开就能看到时间，收起后只在屏幕边缘留一个可拖动的胶囊按钮。
 
+[Tock 官方页面](https://makatool.com/blog/tock/)
+
 ![Tock 面板示例，显示两种重置时间和自动发送计划](docs/tock-preview.png)
 
 ## 下载与安装
