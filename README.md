@@ -8,11 +8,11 @@ Tock 是一个轻量的桌面浮窗，用来查看 Codex 的 5 小时和每周�
 
 前往 [GitHub Releases](https://github.com/xiaobc1234/tock/releases/latest)，按电脑的系统和处理器下载对应的 ZIP。
 
-| 平台 | v0.3.2 下载文件 | 使用方式 |
-| --- | --- | --- |
-| Mac · Apple 芯片（M 系列） | `Tock-0.3.2-mac-arm64.zip` | 解压后将 Tock 拖入「应用程序」 |
-| Mac · Intel 芯片 | `Tock-0.3.2-mac-x64.zip` | 解压后将 Tock 拖入「应用程序」 |
-| Windows · Intel / AMD 64 位 | `Tock-0.3.2-win-x64.zip` | 解压后运行 `Tock.exe` |
+| 平台                        | v0.3.2 下载文件            | 使用方式                       |
+| --------------------------- | -------------------------- | ------------------------------ |
+| Mac · Apple 芯片（M 系列）  | `Tock-0.3.2-mac-arm64.zip` | 解压后将 Tock 拖入「应用程序」 |
+| Mac · Intel 芯片            | `Tock-0.3.2-mac-x64.zip`   | 解压后将 Tock 拖入「应用程序」 |
+| Windows · Intel / AMD 64 位 | `Tock-0.3.2-win-x64.zip`   | 解压后运行 `Tock.exe`          |
 
 - **Mac** 需要 macOS 13 Ventura 或更新版本。在「 → 关于本机」查看芯片或处理器。
 - **Windows** 需要 Windows 10 或 11 和 WebView2 Runtime。[微软官方下载](https://developer.microsoft.com/en-us/microsoft-edge/webview2/#download)
@@ -46,15 +46,6 @@ Tock 使用系统 WebView，三个 ZIP 均小于 8 MB，解压后均小于 19 MB
 版本号读取自 `VERSION`。三个 ZIP 会写入 `dist/release-版本号/`。单独构建可将 `all` 换成 `darwin-arm64`、`darwin-x64` 或 `win32-x64`。脚本会检查应用解压后小于 100 MB。
 
 也可在 GitHub 仓库打开 **Actions → Build desktop packages → Run workflow**。完成后，在该运行的 **Artifacts** 下载三个可直接上传到 Release 的 ZIP。[构建工作流](.github/workflows/build.yml)
-
-### 发布到 GitHub
-
-1. 在 Tock 仓库提交并推送本次源码。运行包位于已被 Git 忽略的 `dist/`。
-2. 打开仓库的 **Releases → Draft a new release**，创建与 `VERSION` 一致的标签，例如 `v0.3.2`，并选中本次提交所在的分支。
-3. 拖入三个平台 ZIP，填写更新说明，点击 **Publish release**。GitHub 会根据标签生成源码下载项。
-4. 发布后分享 [最新版下载页](https://github.com/xiaobc1234/tock/releases/latest)。
-
-[GitHub Release 操作指南](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)
 
 ## 数据与许可
 
