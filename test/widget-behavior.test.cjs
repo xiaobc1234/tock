@@ -1,10 +1,5 @@
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-const { dockBounds, nearestDock } = require('../src/dock.cjs')
-const { nextAllowedSend } = require('../src/send-limit.cjs')
-
-const minute = 60_000
-const now = 1_800_000_000_000
+const { test, assert } = require('./test-api.cjs')
+const { dockBounds, nearestDock } = require('./dock.cjs')
 const area = { x: -1300, y: 35, width: 1200, height: 810 }
 
 test('expanded panel and collapsed strip dock to all four edges', () => {
@@ -31,17 +26,4 @@ test('expanded panel and collapsed strip dock to all four edges', () => {
   }
   assert.deepEqual(dockBounds(area, 'left', 0.5, true), { x: -1300, y: 412, width: 22, height: 56 })
   assert.deepEqual(dockBounds(area, 'top', 0.5, true), { x: -728, y: 35, width: 56, height: 22 })
-})
-
-test('send cooldown is durable and independent of the current Codex account', () => {
-  const storedHistory = JSON.parse(JSON.stringify([now - 5 * minute]))
-  assert.equal(nextAllowedSend(storedHistory, now), now + 10 * minute)
-  assert.equal(nextAllowedSend(storedHistory, now + 10 * minute), now + 10 * minute)
-})
-
-test('rolling 24-hour send cap includes timed-out attempts and works with unsorted history', () => {
-  const history = [16, 150, 130, 110, 90, 70].map((count) => now - count * minute)
-  const firstExpires = now + (24 * 60 - 150) * minute
-  assert.equal(nextAllowedSend(history, now), firstExpires)
-  assert.equal(nextAllowedSend(history, firstExpires), firstExpires)
 })

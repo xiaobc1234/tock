@@ -1,10 +1,12 @@
 const historyLimit = 50
 
 function restoreHistory(records, previousAttempts) {
-  const saved = Array.isArray(records)
-    ? records
-    : previousAttempts.map((at) => ({ at, mode: 'legacy', result: 'unknown' }))
-  return saved.filter((entry) => Number.isFinite(entry?.at)).slice(0, historyLimit)
+  if (Array.isArray(records)) {
+    return records.filter((entry) => Number.isFinite(entry?.at)).slice(0, historyLimit)
+  }
+  if (!Array.isArray(previousAttempts)) return []
+  return previousAttempts.filter(Number.isFinite).sort((a, b) => b - a).slice(0, historyLimit)
+    .map((at) => ({ at, mode: 'legacy', result: 'unknown' }))
 }
 
 function addGreeting(records, at, mode) {

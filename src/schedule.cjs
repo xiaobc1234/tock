@@ -25,10 +25,11 @@ function quotaSnapshot(result) {
 function observe(previous, snapshot, now) {
   const sameAccount = snapshot.accountId && previous.accountId === snapshot.accountId
   const schedule = sameAccount
-    ? { ...previous, windows: { ...previous.windows } }
-    : { accountId: snapshot.accountId, windows: {} }
+    ? { ...previous, windows: { ...previous.windows }, startedAt: { ...previous.startedAt } }
+    : { accountId: snapshot.accountId, windows: {}, startedAt: {} }
 
   for (const window of snapshot.windows) {
+    if (window.used > 0) delete schedule.startedAt[window.minutes]
     const old = schedule.windows[window.minutes]
     if (!window.resetAt) continue
     if (old?.resetAt === window.resetAt) continue
@@ -48,6 +49,18 @@ function observe(previous, snapshot, now) {
   return schedule
 }
 
+function unstartedWindows(schedule, windows, checkedAt) {
+  return windows.filter(({ minutes, resetAt, used }) => {
+    const duration = minutes * minuteMs
+    // The API sends whole-second timestamps. Compare at the precision of the response,
+    // using the start of the read so transport delays don't shorten the window.
+    const readTime = Math.floor(checkedAt / 1000) * 1000
+    const last = schedule.startedAt?.[minutes]
+    return used === 0 && resetAt && resetAt - readTime >= duration
+      && (!last || readTime - last >= duration)
+  }).map(({ minutes }) => String(minutes))
+}
+
 function nextCheck(schedule, now) {
   const windows = Object.entries(schedule.windows).filter(([, window]) => !window.attempted)
   const ended = windows.filter(([, window]) => window.resetAt <= now)
@@ -62,14 +75,13 @@ function nextCheck(schedule, now) {
   return { at, windows: [] }
 }
 
-function nextWake(schedule, windows, allowedAt, now, includeDue = false) {
+function nextWake(schedule, windows, now, includeDue = false) {
   const pending = nextCheck(schedule, now)
   if (!pending) return null
   const exhausted = windows.filter(({ used }) => used >= 100)
   if (exhausted.some(({ resetAt }) => !resetAt)) return null
 
-  const availableAt = Math.max(allowedAt, ...exhausted.map(({ resetAt }) => resetAt + minuteMs))
-  const at = Math.max(pending.at, availableAt)
+  const at = Math.max(pending.at, ...exhausted.map(({ resetAt }) => resetAt + minuteMs))
   if (at > now || includeDue) return at
 
   // This boundary was just checked. Wait for a later known boundary instead
@@ -80,10 +92,12 @@ function nextWake(schedule, windows, allowedAt, now, includeDue = false) {
   return upcoming.length ? Math.min(...upcoming) : null
 }
 
-function recordAttempt(schedule, minutes, now) {
+function recordAttempt(schedule, minutes, now, starting = []) {
   const windows = { ...schedule.windows }
+  const startedAt = { ...schedule.startedAt }
   for (const duration of minutes) windows[duration] = { ...windows[duration], attempted: true }
-  return { ...schedule, windows, lastAttempt: now }
+  for (const duration of starting) startedAt[duration] = now
+  return { ...schedule, windows, startedAt }
 }
 
-module.exports = { minuteMs, quotaSnapshot, observe, nextCheck, nextWake, recordAttempt }
+module.exports = { minuteMs, quotaSnapshot, observe, unstartedWindows, nextCheck, nextWake, recordAttempt }

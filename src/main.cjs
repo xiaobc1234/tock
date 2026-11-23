@@ -1,50 +1,31 @@
-const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, powerMonitor, screen, shell } = require('electron')
-const { createHash } = require('node:crypto')
-const { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } = require('node:fs')
-const { join } = require('node:path')
+const { host, events, handle, displays, nearestDisplay, setupTray } = require('./host.cjs')
 const { Codex } = require('./codex.cjs')
-const { quotaSnapshot, observe, nextCheck, nextWake, recordAttempt } = require('./schedule.cjs')
-const { attemptHistory, nextAllowedSend } = require('./send-limit.cjs')
+const { quotaSnapshot, observe, unstartedWindows, nextCheck, nextWake, recordAttempt } = require('./schedule.cjs')
 const { restoreHistory, addGreeting, confirmGreeting } = require('./history.cjs')
-const { edges, expandedSize, dockBounds, nearestDock } = require('./dock.cjs')
-const { locateCodex } = require('./paths.cjs')
-
-const appName = 'Tock'
+const { edges, dockBounds, nearestDock } = require('./dock.cjs')
 const maxTimerDelay = 2_147_483_647
 const edgeLabels = { left: '左边', right: '右边', top: '顶部', bottom: '底部' }
 
-app.setName(appName)
-if (!app.requestSingleInstanceLock()) {
-  app.quit()
-} else {
-  app.whenReady().then(start).catch((error) => {
-    console.error(error.message)
-    app.exit(1)
-  })
-}
-
 function readSettings(path) {
   try {
-    return JSON.parse(readFileSync(path, 'utf8')) ?? {}
+    return host.exists(path) ? JSON.parse(host.readFile(path)) ?? {} : {}
   } catch (error) {
-    if (error.code !== 'ENOENT') console.error('无法读取 Tock 设置')
+    console.error('无法读取 Tock 设置')
     return {}
   }
 }
 
 function accountKey(response) {
   if (!response?.accountId) return null
-  return createHash('sha256').update(JSON.stringify([response.accountId, response.email ?? null])).digest('hex')
+  return host.sha256(JSON.stringify([response.accountId, response.email ?? null]))
 }
 
 function start() {
-  if (process.platform === 'darwin') app.dock.hide()
-  const dataDir = app.getPath('userData')
-  mkdirSync(dataDir, { recursive: true })
-  const settingsPath = join(dataDir, 'settings.json')
-  const legacyPath = join(app.getPath('appData'), 'Codex 周期', 'settings.json')
-  const saved = readSettings(existsSync(settingsPath) ? settingsPath : legacyPath)
-  const attempts = attemptHistory(saved.attempts ?? [saved.schedule?.lastAttempt], Date.now())
+  const dataDir = host.path('userData')
+  host.mkdir(dataDir)
+  const settingsPath = host.join(dataDir, 'settings.json')
+  const legacyPath = host.join(host.path('appData'), 'Codex 周期', 'settings.json')
+  const saved = readSettings(host.exists(settingsPath) ? settingsPath : legacyPath)
   let settings = {
     edge: edges.includes(saved.edge) ? saved.edge : 'right',
     collapsed: saved.collapsed === true,
@@ -53,13 +34,13 @@ function start() {
     autoEnabled: saved.autoEnabled === true || (saved.autoEnabled === undefined && Boolean(saved.autoAccount)),
     schedules: saved.schedules ?? {},
     legacySchedule: saved.legacySchedule ?? saved.schedule,
-    attempts,
-    history: restoreHistory(saved.history, [...attempts].reverse()),
+    history: restoreHistory(saved.history, saved.attempts ?? [saved.schedule?.lastAttempt]),
   }
-  const scratch = mkdtempSync(join(app.getPath('temp'), 'tock-'))
-  const binary = locateCodex(app.isPackaged ? process.resourcesPath : undefined)
+  const scratch = host.mkdtemp(host.join(host.path('temp'), 'tock-'))
+  const binary = host.findCodex()
   const codex = binary ? new Codex(binary, scratch) : null
   let quota = null
+  let quotaReadAt = 0
   let connectedAccount = null
   let accountConnected = false
   let selectedModel = null
@@ -70,71 +51,50 @@ function start() {
   let busy = false
   let quitting = false
   let autoTimer
-  let cooldownTimer
   let settleTimer
   let nextSend = null
   let drag
-  let dockDisplay = screen.getAllDisplays().find(({ id }) => id === settings.displayId)
-    ?? screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+  let dockDisplay = displays().find(({ id }) => id === settings.displayId)
+    ?? nearestDisplay(JSON.parse(host.cursor()))
 
   function updateSettings(changes) {
     const next = { ...settings, ...changes }
-    if (JSON.stringify(next) === JSON.stringify(settings) && existsSync(settingsPath)) return
+    if (JSON.stringify(next) === JSON.stringify(settings) && host.exists(settingsPath)) return
     const temporary = settingsPath + '.tmp'
-    writeFileSync(temporary, JSON.stringify(next), { mode: 0o600 })
-    renameSync(temporary, settingsPath)
+    host.writeFile(temporary, JSON.stringify(next))
+    host.rename(temporary, settingsPath)
     settings = next
   }
-
-  const window = new BrowserWindow({
-    ...expandedSize, frame: false, transparent: true, alwaysOnTop: true,
-    hasShadow: false, show: false, resizable: false, skipTaskbar: true,
-    fullscreenable: false, minimizable: false, maximizable: false,
-    icon: join(__dirname, 'icon.png'),
-    webPreferences: {
-      preload: join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true,
-    },
-  })
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  window.webContents.on('will-navigate', (event) => event.preventDefault())
-  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false })
-  const icon = nativeImage.createFromPath(join(__dirname, 'trayTemplate.png'))
-  if (process.platform === 'darwin') icon.setTemplateImage(true)
-  const tray = new Tray(icon)
-  tray.setToolTip(appName)
 
   function currentSchedule() {
     return settings.schedules[quota?.accountId] ?? { accountId: quota?.accountId, windows: {} }
   }
 
   function publish() {
-    if (window.isDestroyed()) return
-    const now = Date.now()
-    const allowedAt = nextAllowedSend(settings.attempts, now)
-    window.webContents.send('widget:snapshot', {
+    host.snapshot(JSON.stringify({
       windows: quota?.windows.map(({ minutes, resetAt }) => ({ minutes, resetAt })) ?? [],
       hasQuota: Boolean(quota),
+      weeklyOnly: quota?.windows.length === 1 && quota.windows[0].minutes === 10080,
       account: connectedAccount,
       accountConnected,
       accountKnown: Boolean(quota?.accountId),
       nextSend,
       history: settings.history,
       automatic: settings.autoEnabled,
-      canSend: Boolean(quota?.canSend && quota?.accountId && selectedModel && !busy && allowedAt <= now),
-      blockedUntil: allowedAt > now ? allowedAt : null,
+      canSend: Boolean(quota?.canSend && quota?.accountId && selectedModel && !busy),
       model: selectedModel ? { name: selectedModel.name, effort: selectedModel.effort } : null,
       collapsed: settings.collapsed,
       edge: settings.edge,
       busy, needsLogin, loginPending,
       status: viewStatus,
       note: viewNote,
-    })
+    }))
   }
 
   function placeWindow() {
     if (drag) return
-    dockDisplay = screen.getAllDisplays().find(({ id }) => id === dockDisplay.id) ?? screen.getPrimaryDisplay()
-    window.setBounds(dockBounds(dockDisplay.workArea, settings.edge, settings.anchor, settings.collapsed))
+    dockDisplay = displays().find(({ id }) => id === dockDisplay.id) ?? displays().find(display => display.primary)
+    host.setBounds(JSON.stringify(dockBounds(dockDisplay.workArea, settings.edge, settings.anchor, settings.collapsed)))
   }
 
   function setDock(changes) {
@@ -146,8 +106,7 @@ function start() {
 
   function setCollapsed(collapsed) {
     setDock({ collapsed })
-    if (collapsed) window.showInactive()
-    else window.show()
+    host.show()
   }
 
   function refreshTray() {
@@ -160,26 +119,23 @@ function start() {
           click: () => setDock({ edge }),
         })),
       },
-      { label: '刷新重置时间', click: () => refresh('read') },
+      { label: '刷新并检查是否开启新周期', click: () => refresh('refresh') },
     ]
-    if (['darwin', 'win32'].includes(process.platform) && app.isPackaged) {
-      items.push({
-        label: '登录系统时启动', type: 'checkbox', checked: app.getLoginItemSettings().openAtLogin,
-        click: ({ checked }) => app.setLoginItemSettings({ openAtLogin: checked }),
-      })
-    }
-    items.push({ type: 'separator' }, { label: '退出 Tock', click: () => app.quit() })
-    tray.setContextMenu(Menu.buildFromTemplate(items))
+    items.push({
+      label: '登录系统时启动', type: 'checkbox', checked: host.autostartEnabled(),
+      click: ({ checked }) => host.setAutostart(checked),
+    }, { type: 'separator' }, { label: '退出 Tock', click: () => host.quit() })
+    setupTray(items)
   }
 
   function moveDrag() {
     if (!drag) return
-    const point = screen.getCursorScreenPoint()
+    const point = JSON.parse(host.cursor())
     const dx = point.x - drag.start.x
     const dy = point.y - drag.start.y
     if (!drag.moved && Math.hypot(dx, dy) < 4) return
     drag.moved = true
-    window.setPosition(drag.bounds.x + dx, drag.bounds.y + dy)
+    host.setPosition(drag.bounds.x + dx, drag.bounds.y + dy)
   }
 
   function endDrag(toggleOnClick) {
@@ -192,27 +148,14 @@ function start() {
       if (fromStrip && toggleOnClick) setCollapsed(false)
       return
     }
-    const point = screen.getCursorScreenPoint()
-    dockDisplay = screen.getDisplayNearestPoint(point)
-    setDock(nearestDock(dockDisplay.workArea, point, window.getBounds()))
+    const point = JSON.parse(host.cursor())
+    dockDisplay = nearestDisplay(point)
+    setDock(nearestDock(dockDisplay.workArea, point, JSON.parse(host.bounds())))
   }
 
-  window.on('blur', () => endDrag(false))
-  window.on('close', (event) => {
-    if (quitting) return
-    event.preventDefault()
-    app.quit()
-  })
-  app.on('second-instance', () => setCollapsed(false))
-  app.on('activate', () => setCollapsed(false))
-  for (const event of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(event, placeWindow)
-  window.webContents.once('did-finish-load', () => {
-    placeWindow()
-    window.showInactive()
-    publish()
-  })
-  window.loadFile(join(__dirname, 'index.html'))
-  refreshTray()
+  events.on('blur', () => endDrag(false))
+  events.on('activate', () => setCollapsed(false))
+  events.on('display', placeWindow)
 
   function armAutomaticTimer() {
     clearTimeout(autoTimer)
@@ -232,15 +175,10 @@ function start() {
   }
 
   function scheduleNext(includeDue = false) {
-    clearTimeout(cooldownTimer)
-    const now = Date.now()
-    const allowedAt = nextAllowedSend(settings.attempts, now)
     nextSend = !quitting && !loginPending && settings.autoEnabled && quota?.accountId
-      ? nextWake(currentSchedule(), quota.windows, allowedAt, now, includeDue)
+      ? nextWake(currentSchedule(), quota.windows, Date.now(), includeDue)
       : null
     armAutomaticTimer()
-    // Ending a cooldown just enables the button again. It doesn't read quota.
-    if (!quitting && allowedAt > now) cooldownTimer = setTimeout(publish, allowedAt - now)
   }
 
   function applyQuota(response) {
@@ -272,6 +210,7 @@ function start() {
 
   async function loadQuota(connection, options) {
     try {
+      quotaReadAt = Date.now()
       applyQuota(await connection.readQuota(options))
     } catch (error) {
       quota = null
@@ -286,7 +225,7 @@ function start() {
   async function refresh(mode) {
     if (busy || quitting || loginPending) return
     if (!codex) {
-      viewStatus = '找不到配套 Codex，请重新安装 Tock'
+      viewStatus = '未找到 Codex CLI。请安装后重新打开 Tock。'
       publish()
       return
     }
@@ -294,6 +233,7 @@ function start() {
     nextSend = null
     clearTimeout(settleTimer)
     const manual = mode === 'manual'
+    const requestedRefresh = mode === 'refresh'
     const expected = quota?.accountId
     const expectedModel = selectedModel
     busy = true
@@ -324,8 +264,9 @@ function start() {
       }
       const now = Date.now()
       const pending = nextCheck(currentSchedule(), now)
-      if (!manual && (!settings.autoEnabled || !pending?.windows.length || pending.at > now)) return
-      if (nextAllowedSend(settings.attempts, now) > now) return
+      const starting = unstartedWindows(currentSchedule(), quota.windows, quotaReadAt)
+      if (requestedRefresh && starting.length === 0) return
+      if (!manual && !requestedRefresh && (!settings.autoEnabled || !pending?.windows.length || pending.at > now)) return
       if (!quota.canSend) {
         viewNote = '暂未确认有可用的订阅额度，已暂停发送'
         return
@@ -336,24 +277,22 @@ function start() {
       const checkedAt = Date.now()
       const final = nextCheck(currentSchedule(), checkedAt)
       if (quitting) return
-      if (!manual && (!settings.autoEnabled || !final?.windows.length || final.at > checkedAt)) return
-      if (nextAllowedSend(settings.attempts, checkedAt) > checkedAt) return
+      if (!manual && !requestedRefresh && (!settings.autoEnabled || !final?.windows.length || final.at > checkedAt)) return
       const elapsedWindows = final?.windows ?? []
       const wasUnscheduled = !quota.windows.some(({ resetAt }) => resetAt)
       updateSettings({
         schedules: {
           ...settings.schedules,
-          [account]: recordAttempt(currentSchedule(), elapsedWindows, checkedAt),
+          [account]: recordAttempt(currentSchedule(), elapsedWindows, checkedAt, starting),
         },
-        attempts: [...attemptHistory(settings.attempts, checkedAt), checkedAt],
-        history: addGreeting(settings.history, checkedAt, manual ? 'manual' : 'automatic'),
+        history: addGreeting(settings.history, checkedAt, manual ? 'manual' : requestedRefresh ? 'refresh' : 'automatic'),
       })
       viewNote = '正在发送问候…'
       publish()
       const completed = await codex.greet(thread).catch(() => false)
       if (quitting) return
       if (completed) updateSettings({ history: confirmGreeting(settings.history, checkedAt) })
-      const resultNote = completed ? '已发送问候' : '发送结果未确认，已计入频率限制'
+      const resultNote = completed ? '已发送问候' : '发送结果未确认'
       viewNote = resultNote
       try {
         await loadQuota(codex, { fresh: true })
@@ -396,22 +335,19 @@ function start() {
     publish()
   })
 
-  function handle(channel, handler) {
-    ipcMain.handle('widget:' + channel, (event, value) => {
-      if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return
-      return handler(value)
-    })
-  }
-
-  handle('ready', publish)
+  handle('ready', () => {
+    placeWindow()
+    host.show()
+    publish()
+  })
   handle('collapse', () => setCollapsed(!settings.collapsed))
-  handle('quit', () => app.quit())
-  handle('refresh', () => refresh('read'))
+  handle('quit', () => host.quit())
+  handle('refresh', () => refresh('refresh'))
   handle('send', () => refresh('manual'))
   handle('drag-start', (fromStrip) => {
     if (drag || typeof fromStrip !== 'boolean') return
-    const start = screen.getCursorScreenPoint()
-    drag = { start, bounds: window.getBounds(), fromStrip, moved: false, timer: setInterval(moveDrag, 16) }
+    const start = JSON.parse(host.cursor())
+    drag = { start, bounds: JSON.parse(host.bounds()), fromStrip, moved: false, timer: setInterval(moveDrag, 16) }
   })
   handle('drag-end', (toggleOnClick) => endDrag(toggleOnClick === true))
   handle('automatic', (value) => {
@@ -428,7 +364,7 @@ function start() {
     if (!codex || busy || loginPending || !needsLogin) return
     loginPending = true
     publish()
-    try { await codex.login((url) => shell.openExternal(url)) }
+    try { await codex.login(host.openLoginURL) }
     catch (error) {
       loginPending = false
       viewStatus = error.message
@@ -443,16 +379,17 @@ function start() {
     scheduleNext()
     publish()
   })
-  powerMonitor.on('resume', checkDeadline)
-  powerMonitor.on('unlock-screen', checkDeadline)
-  app.on('before-quit', () => {
+  events.on('resume', checkDeadline)
+  events.on('quit', () => {
     quitting = true
     clearTimeout(autoTimer)
-    clearTimeout(cooldownTimer)
     clearTimeout(settleTimer)
     clearInterval(drag?.timer)
     codex?.stop()
-    rmSync(scratch, { recursive: true, force: true })
+    host.remove(scratch)
   })
+  refreshTray()
   refresh('automatic')
 }
+
+start()

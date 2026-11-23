@@ -16,30 +16,30 @@ jobs:
         include:
           - target: darwin-arm64
             runner: macos-15
-            output: dist/Tock-*-mac-arm64.zip
+            platform: mac-arm64
           - target: darwin-x64
             runner: macos-15-intel
-            output: dist/Tock-*-mac-x64.zip
+            platform: mac-x64
           - target: win32-x64
-            runner: windows-2025
-            output: dist/Tock-*-win-x64.exe
+            runner: macos-15
+            platform: win-x64
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-go@v6
         with:
-          node-version: '24'
-          cache: npm
-      - run: npm ci
-      - run: npm test
-      - if: runner.os == 'macOS'
-        run: npm run package -- --target=${{ matrix.target }} --config.mac.identity=-
-      - if: runner.os == 'Windows'
-        run: npm run package -- --target=${{ matrix.target }} --config.win.signExecutable=false
-      - uses: actions/upload-artifact@v6
+          go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
+      - run: ./scripts/package-native.sh test
+      - id: package
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          ./scripts/package-native.sh "$TARGET"
+          printf 'version=%s\n' "$(cat VERSION)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
         with:
-          name: Tock-${{ matrix.target }}
-          path: ${{ matrix.output }}
+          path: dist/release-${{ steps.package.outputs.version }}/Tock-${{ steps.package.outputs.version }}-${{ matrix.platform }}.zip
           if-no-files-found: error
-          compression-level: 0
+          archive: false

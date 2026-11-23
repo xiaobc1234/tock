@@ -1,6 +1,5 @@
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-const { minuteMs, quotaSnapshot, observe, nextCheck, nextWake, recordAttempt } = require('../src/schedule.cjs')
+const { test, assert } = require('./test-api.cjs')
+const { minuteMs, quotaSnapshot, observe, nextCheck, nextWake, recordAttempt } = require('./schedule.cjs')
 
 const base = 1_800_000_000_000
 const fiveHours = 300 * minuteMs
@@ -75,29 +74,54 @@ test('the next wake uses the absolute reset time plus a minute, with no periodic
   const now = base
   const windows = [window(300, now + fiveHours), window(10080, now + week)]
   const schedule = observe(initial, snapshot(windows), now)
-  assert.equal(nextWake(schedule, windows, now, now), now + fiveHours + minuteMs)
+  assert.equal(nextWake(schedule, windows, now), now + fiveHours + minuteMs)
 })
 
 test('an exhausted weekly window delays the short window check until weekly reset', () => {
   const now = base
   const windows = [window(300, now + fiveHours), window(10080, now + week, 100)]
   const schedule = observe(initial, snapshot(windows), now)
-  assert.equal(nextWake(schedule, windows, now, now), now + week + minuteMs)
+  assert.equal(nextWake(schedule, windows, now), now + week + minuteMs)
 })
 
 test('a checked expired boundary is never polled while waiting for another one', () => {
   const now = base + minuteMs
   const windows = [window(300, base, 0), window(10080, base + week)]
   const schedule = observe(initial, snapshot(windows), now)
-  assert.equal(nextWake(schedule, windows, now, now), base + week + minuteMs)
-  assert.equal(nextWake(schedule, windows, now, now, true), now)
+  assert.equal(nextWake(schedule, windows, now), base + week + minuteMs)
+  assert.equal(nextWake(schedule, windows, now, true), now)
   const short = observe(initial, snapshot(windows.slice(0, 1)), now)
-  assert.equal(nextWake(short, windows.slice(0, 1), now, now), null)
+  assert.equal(nextWake(short, windows.slice(0, 1), now), null)
 })
 
-test('a future cooldown moves the wake time without any intermediate quota read', () => {
+test('a manual send just before a reset does not delay the next automatic wake', () => {
   const now = base
-  const windows = [window(300, now - minuteMs)]
+  const windows = [window(300, now + 1_000)]
   const schedule = observe(initial, snapshot(windows), now)
-  assert.equal(nextWake(schedule, windows, now + 15 * minuteMs, now), now + 15 * minuteMs)
+  const afterManualSend = recordAttempt(schedule, [], now)
+  assert.equal(nextWake(afterManualSend, windows, now), now + 1_000 + minuteMs)
+})
+
+test('manual refresh finds zero-use windows at the full duration with second precision', () => {
+  const { unstartedWindows } = require('./schedule.cjs')
+  const windows = [
+    window(300, base + fiveHours, 0),
+    window(10080, base + week, 0),
+  ]
+  const schedule = observe(initial, snapshot(windows), base)
+  assert.deepEqual(unstartedWindows(schedule, windows, base + 800), ['300', '10080'])
+  assert.deepEqual(unstartedWindows(schedule, windows, base + 1000), [])
+  const used = windows.map((item) => ({ ...item, used: 1 }))
+  assert.deepEqual(unstartedWindows(schedule, used, base), [])
+})
+
+test('weekly-only accounts are recognized and a sliding estimate cannot repeat a greeting', () => {
+  const { unstartedWindows } = require('./schedule.cjs')
+  const windows = [window(10080, base + week, 0)]
+  const previous = observe(initial, snapshot(windows), base)
+  assert.deepEqual(unstartedWindows(previous, windows, base), ['10080'])
+  const attempted = recordAttempt(previous, [], base, ['10080'])
+  const later = base + 20 * minuteMs
+  const sliding = [window(10080, later + week, 0)]
+  assert.deepEqual(unstartedWindows(observe(attempted, snapshot(sliding), later), sliding, later), [])
 })

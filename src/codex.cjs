@@ -1,8 +1,6 @@
-const { EventEmitter } = require('node:events')
-const { spawn } = require('node:child_process')
-const { createInterface } = require('node:readline')
-const { setTimeout: wait } = require('node:timers/promises')
-const { version } = require('../package.json')
+const { Emitter, host } = require('./host.cjs')
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const requestTimeout = 15_000
 const preferredModels = new Map([
@@ -51,7 +49,7 @@ const quotaMessages = {
   unknown: 'Codex 已登录，但额度服务未返回数据，请稍后刷新。',
 }
 
-class Codex extends EventEmitter {
+class Codex extends Emitter {
   constructor(binary, cwd) {
     super()
     this.binary = binary
@@ -62,28 +60,22 @@ class Codex extends EventEmitter {
 
   async connect() {
     if (this.connection) return this.connection
-    const child = spawn(this.binary, [
-      'app-server', '--stdio', '-c', 'model_provider="openai"',
-    ], { cwd: this.cwd, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true })
-    this.child = child
-
+    let child
     const disconnect = () => {
       if (this.child !== child) return
       this.child = null
       this.connection = null
       this.loginId = null
-      child.kill()
+      host.kill(child)
       for (const request of this.requests.values()) {
         request.reject(new Error('Codex 连接中断'))
       }
       this.emit('disconnected')
     }
     this.disconnect = disconnect
-    child.once('error', disconnect)
-    child.once('exit', disconnect)
-    child.stdin.once('error', disconnect)
-    createInterface({ input: child.stdout }).on('line', (line) => {
+    child = host.spawn(this.binary, ['app-server', '--stdio', '-c', 'model_provider="openai"'], this.cwd, (event, line) => {
       if (this.child !== child) return
+      if (event === 'exit') { disconnect(); return }
       let message
       try { message = JSON.parse(line) } catch { return }
       if (message.method) {
@@ -100,8 +92,9 @@ class Codex extends EventEmitter {
       else request.resolve(message.result)
     })
 
+    this.child = child
     this.connection = this.call('initialize', {
-      clientInfo: { name: 'tock', version },
+      clientInfo: { name: 'tock', version: host.version },
     }, '无法启动 Codex').then(() => this.write({ method: 'initialized' })).catch((error) => {
       disconnect()
       throw error
@@ -110,8 +103,8 @@ class Codex extends EventEmitter {
   }
 
   write(value) {
-    if (!this.child || this.child.stdin.destroyed) throw new Error('Codex 未连接')
-    this.child.stdin.write(JSON.stringify(value) + '\n')
+    if (!this.child) throw new Error('Codex 未连接')
+    host.write(this.child, JSON.stringify(value) + '\n')
   }
 
   call(method, params, failure = 'Codex 请求失败') {
@@ -168,11 +161,7 @@ class Codex extends EventEmitter {
     }, '无法打开 ChatGPT 登录')
     this.loginId = result.loginId
     try {
-      const url = new URL(result.authUrl)
-      if (url.protocol !== 'https:' || !['chatgpt.com', 'auth.openai.com'].includes(url.hostname)) {
-        throw new Error('无法验证登录地址')
-      }
-      await openBrowser(url.href)
+      await openBrowser(result.authUrl)
     } catch (error) {
       await this.cancelLogin().catch(() => {})
       throw error

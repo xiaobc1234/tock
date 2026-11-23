@@ -1,6 +1,5 @@
-const { test } = require('node:test')
-const assert = require('node:assert/strict')
-const { Codex, RpcError } = require('../src/codex.cjs')
+const { test, assert } = require('./test-api.cjs')
+const { Codex, RpcError } = require('./codex.cjs')
 
 function fakeCodex(...responses) {
   const client = new Codex()

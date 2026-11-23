@@ -2,10 +2,11 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tock</title>
   <link rel="stylesheet" href="widget.css">
+  <script src="bridge.js" defer></script>
   <script src="widget.js" defer></script>
 </head>
 <body>
@@ -16,7 +17,7 @@
         <h1>Tock</h1>
       </div>
       <div class="header-actions">
-        <button id="refresh" class="icon-button" aria-label="刷新重置时间" title="刷新重置时间">
+        <button id="refresh" class="icon-button" aria-label="刷新重置时间" title="刷新重置时间。检测到未开启的周期时发一条问候">
           <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M3.2 8.4a9.5 9.5 0 0 1 17.5 1.8m0 0v-4m0 4-3.7-1.7M20.8 15.6a9.5 9.5 0 0 1-17.5-1.8m0 0v4m0-4 3.7 1.7"/>
           </svg>
@@ -46,7 +47,7 @@
         <span>自动发送问候</span>
         <input id="automatic" type="checkbox" role="switch" aria-describedby="auto-timing">
       </label>
-      <div class="next-row" id="auto-timing"><span>下次发送</span><time id="next">—</time></div>
+      <div class="next-row" id="auto-timing"><span>下次自动发送</span><time id="next">—</time></div>
     </div>
 
     <div class="actions">

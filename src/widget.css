@@ -186,3 +186,5 @@ input[type="checkbox"]:disabled { opacity: .55; cursor: default; }
   .capsule::after { animation: none; }
   .capsule, .primary, input[type="checkbox"], input[type="checkbox"]::before { transition: none; }
 }
+
+#windows.weekly-only { grid-template-columns: minmax(0, 1fr); }

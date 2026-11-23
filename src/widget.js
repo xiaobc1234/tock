@@ -51,6 +51,8 @@ function render(snapshot) {
   send.hidden = snapshot.needsLogin
   login.hidden = !snapshot.needsLogin
   login.textContent = snapshot.loginPending ? '取消登录' : '登录 ChatGPT'
+  document.querySelector('#windows').classList.toggle('weekly-only', Boolean(snapshot.weeklyOnly))
+  document.querySelector('#reset-short').closest('.time-card').hidden = Boolean(snapshot.weeklyOnly)
   account.textContent = snapshot.account || (snapshot.accountConnected ? 'Codex 已登录' : 'Codex 账号未确认')
   account.title = snapshot.account ?? ''
   accountDot.dataset.connected = String(snapshot.accountConnected)
@@ -58,10 +60,8 @@ function render(snapshot) {
   model.textContent = snapshot.model
     ? snapshot.model.name + ' · ' + (efforts[snapshot.model.effort] ?? snapshot.model.effort ?? '默认推理')
     : snapshot.busy ? '正在识别可用模型…' : '暂无可用问候模型'
-  const cooldown = snapshot.blockedUntil ? '下次可发送 ' + dateFormat.format(snapshot.blockedUntil)
-    + ' ' + clockFormat.format(snapshot.blockedUntil) : ''
   status.textContent = snapshot.loginPending ? '请在浏览器完成 Codex 登录'
-    : [snapshot.status || snapshot.note, cooldown].filter(Boolean).join(' · ')
+    : snapshot.status || snapshot.note
   displayTime(next, snapshot.nextSend, snapshot.automatic ? '待确认' : '已关闭')
 
   for (const [minutes, selector] of [[300, '#reset-short'], [10080, '#reset-week']]) {
@@ -73,7 +73,7 @@ function render(snapshot) {
 }
 
 function renderHistory(records = []) {
-  const types = { manual: '手动发送', automatic: '自动发送', legacy: '旧版记录' }
+  const types = { manual: '手动发送', automatic: '自动发送', refresh: '刷新时发送', legacy: '旧版记录' }
   historyEmpty.hidden = records.length > 0
   historyItems.replaceChildren(...records.map(({ at, mode, result }) => {
     const row = document.createElement('li')
